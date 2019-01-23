@@ -20,9 +20,12 @@ All filters from the REST service are permitted, plus one extra filter for munic
 * If no match, a few corrections are tried (removing abbreviations etc)
 * Addresses which are not possible to geocode get a (0,0) coordinate
 * Default tagging is amenity=restaurant. Some nodes get amenity=cafe or amenity=fast_food based on their names. Needs verification.
+* Restaurant names are not copy-edited, needs manual editing.
+* Some restaurants have a short lifespan. Please see the provided date for last inspection.
 
 
 ### References ###
 
-* [Mattilsynet smilefjes data](https://data.norge.no/data/mattilsynet/smilefjestilsyn-på-serveringssteder)
-* [Search page](https://hotell.difi.no/?dataset=mattilsynet/smilefjes/tilsyn)
+* [Mattilsynet REST description](https://data.norge.no/data/mattilsynet/smilefjestilsyn-på-serveringssteder)
+* [Mattilsynet REST search page](https://hotell.difi.no/?dataset=mattilsynet/smilefjes/tilsyn)
+* [Kartverket address REST description](https://ws.geonorge.no/adresser/v1/)
