@@ -10,14 +10,14 @@ All filters from the REST service are permitted, plus one extra filter for munic
 * One post code name: <code>"poststed=Vang på Hedmarken"</code> (include full name if not unique)
 * One post code: <code>postnr=4885</code>
 * Restaurant name: <code>navn=Egon</code> (matches complete words only)
-* General queries: <code>query=Torvet</code> (matches complete words in any attributes, e.g. name and address)
+* General queries: <code>query=Torvet</code> (matches complete words in any attribute, e.g. name and address)
 * Also combinations: <code>"query=Egon&poststed=Oslo"</code> (please include "")
 
 ### Notes ###
 
 * Addresses are geocoded using Kartverket REST service from the cadastral register
-* Mattilsynet is using internal addresses, many of which are not correct
-* If not match, a few corrections are tried (removing abbreviations etc)
+* Mattilsynet is using internal addresses, many of which are not correct or incomplete
+* If no match, a few corrections are tried (removing abbreviations etc)
 * Addresses which are not possible to geocode get a (0,0) coordinate
 * Default tagging is amenity=restaurant. Some nodes get amenity=cafe or amenity=fast_food based on their names. Needs verification.
 
