@@ -18,13 +18,61 @@ import urllib2
 import re
 
 
-version = "0.1.0"
+version = "0.2.0"
 
 header = { "User-Agent": "osm-no/restaurant2osm/" + version }
 
 transform_name = {
-	' AS': '',
-	' A/S': ''
+	'Airport': 'airport',
+	'Alle': u'allé',
+	'alle': u'allé',
+	'AMFI': u'Amfi',
+	'Bakeri': 'bakeri',
+	'Brygge': 'brygge',
+	u'Cafè': u'Café',
+	u'cafè': u'café',
+	'Gate': 'gate',
+	u'Gård': u'gård',
+	'Hagesenter': 'hagesenter',
+	'Hotel': 'hotel',
+	'Hotell': 'hotell',
+	'Hos': 'hos',
+	'I': 'i',
+	'Lufthavn': 'lufthavn',
+	'McDonald': "McDonald's",
+	'McDonalds': "McDonald's",
+	u'McDonald´s': "McDonald's",
+	u'McDonald`s': "McDonald's",
+	'Og': 'og',
+	'Plass': 'plass',
+	u'På': u'på',
+	'Senter': 'senter',
+	'Sentrum': 'sentrum',
+	'Stasjon': 'stasjon',
+	'Storsenter': 'storsenter',
+	'Torg': 'torg',
+	'Torv': 'torv',
+	'Veg': 'veg',
+	'Vei': 'vei',
+	'AVD.': '',
+	'AVD': '',
+	'Avd.': '',
+	'avd.': '',
+	'Avd': '',
+	'avd': '',
+	'AS': '',
+	'As': '',
+	'as': '',
+	'A/S': '',
+	'a/s': '',
+	'ANS': '',
+	'ans': '',
+	'DA': '',
+	'Invest': '',
+	'invest': '',
+	'DRIFT': '',
+	'Drift': '',
+	'drift': ''
 }
 
 transform_address = {
@@ -55,14 +103,15 @@ amenities = {
 	'kaffe': 'cafe',
 	'coffee': 'cafe',
 	'espresso': 'cafe',
-	'baker': 'cafe',
-	u'brød': 'cafe',
+	'baker': 'bakery',
+	u'brød': 'bakery',
 	'kafeteria': 'cafe',
 	'konditori': 'cafe',
 	'conditori': 'cafe',
 	'kiosk': 'cafe',
 	'iskrembar': 'cafe',
-	'juice': 'cafe',	
+	'juice': 'cafe',
+	'hotel': 'hotel',
 	'Staarbucks': 'cafe',
 	u'Jordbærpikene': 'cafe',
 	'burger': 'fast_food',
@@ -187,7 +236,7 @@ if __name__ == '__main__':
 		}
 	file.close()
 
-	# Ff municipality is a filter then get all post codes for municipality
+	# If municipality is a filter then get all post codes for municipality
 
 	municipality_target = ""
 	query_split = input_query.split("&")
@@ -234,7 +283,8 @@ if __name__ == '__main__':
 		while page < total_pages:  # Iterate all pages with results of query
 
 			page += 1
-			url = "https://hotell.difi.no/api/json/mattilsynet/smilefjes/tilsyn?%s&page=%i" % (urllib.quote(query.encode("utf-8"), safe="&="), page)
+			url = "https://hotell.difi.no/api/json/mattilsynet/smilefjes/tilsyn?%s&page=%i" % \
+					(urllib.quote(query.encode("utf-8"), safe="&="), page)
 			request = urllib2.Request(url, headers=header)
 			file = urllib2.urlopen(request)
 			inspection_data = json.load(file)
@@ -247,14 +297,21 @@ if __name__ == '__main__':
 				# Fix name
 
 				name = inspection['navn']
-				for word_from, word_to in transform_name.iteritems():
-					name = name.replace(word_from, word_to)
-					name = name.replace(word_from.upper(), word_to.upper())
+				if name == name.upper():
+					name = name.title()
+				name_split = name.split()
+				for word in name_split[1:]:
+					for word_from, word_to in transform_name.iteritems():
+						if word == word_from:
+							name = name.replace(word_from, word_to)
 
-				entry['name'] = name.strip()
+				entry['name'] = name.replace("  "," ").strip()
+				entry['original_name'] = inspection['navn'].strip()
 				entry['postcode'] = inspection['postnr']
 				entry['city'] = inspection['poststed'].strip()
-				entry['date'] = "%s-%s-%s" % (inspection['dato'][4:8], inspection['dato'][2:4], inspection['dato'][0:2])
+				entry['date_inspection'] = "%s-%s-%s" % (inspection['dato'][4:8], inspection['dato'][2:4], inspection['dato'][0:2])
+				entry['date_created'] = "20%s-%s-%s" % \
+							(inspection['tilsynsobjektid'][1:3], inspection['tilsynsobjektid'][3:5], inspection['tilsynsobjektid'][5:7])
 
 				street = inspection['adrlinje1'].strip()
 				original_street = street
@@ -287,12 +344,12 @@ if __name__ == '__main__':
 
 				found = None
 				for previous in restaurants:
-					if (previous['address'] == address) and (previous['name'] == entry['name']):
+					if (previous['address'] == address) and (previous['original_name'] == entry['original_name']):
 						found = previous
 
 				if found:
-					if found['date'] < entry['date']:  # Keep last inspection date
-						found['date'] = entry['date']
+					if found['date_inspection'] < entry['date_inspection']:  # Keep last inspection date
+						found['date_inspection'] = entry['date_inspection']
 				elif name.find(" M/S") < 0:
 					restaurants.append(entry)
 					unique_restaurants += 1
@@ -357,25 +414,34 @@ if __name__ == '__main__':
 
 			file.write ('  <node id="%i" lat="%f" lon="%f">\n' % (node_id, latitude, longitude))
 
-			# Fix name and decide amenity type
-
-			name = restaurant['name']
-			if name == name.upper():
-				name = name.title()
-				make_osm_line("ORIGINAL_NAME", restaurant['name'])
+			# Decide amenity type
 
 			amenity = "restaurant"
 			for keyword, amenity_value in amenities.iteritems():
-				if name.lower().find(keyword.lower()) >= 0:
+				if restaurant['name'].lower().find(keyword.lower()) >= 0:
 					amenity = amenity_value
 
 			# Produce tags
 
-			make_osm_line("amenity", amenity)
-			make_osm_line("name", name)
+			if amenity == "hotel":
+				make_osm_line("amenity", "restaurant")
+				make_osm_line("FIXME", "Please consider tourism=hotel tagging, or separate node")
+			elif amenity == "bakery":
+				make_osm_line("amenity", "cafe")
+				make_osm_line("shop", "bakery")
+			else:
+				make_osm_line("amenity", amenity)
 
+			make_osm_line("name", restaurant['name'])
 			make_osm_line("ADDRESS", restaurant['original_address'])
-			make_osm_line("DATE", restaurant['date'])
+			make_osm_line("DATE_CREATED", restaurant['date_created'])
+			make_osm_line("DATE_INSPECTION", restaurant['date_inspection'])
+
+			if restaurant['name'] != restaurant['original_name']:
+				make_osm_line("ORIGINAL_NAME", restaurant['original_name'])
+
+			if (latitude == 0.0) and (longitude ==0.0):  # Tag for geocoding using geocode2osm
+				make_osm_line ("GEOCODE", "yes")
 
 			# Find municipality and county from looking up postal code translation
 
@@ -395,7 +461,6 @@ if __name__ == '__main__':
 					message (" (%s)\n" % restaurant['address'])
 				else:
 					message ("\n")
-#				message (" --> NOT FOUND\n")
 
 		# Wrap up
 
