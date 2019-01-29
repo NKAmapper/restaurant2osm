@@ -18,10 +18,11 @@ All filters from the REST service are permitted, plus one extra filter for munic
 * Addresses are geocoded using Kartverket REST service from the cadastral register
 * Mattilsynet is using internal addresses, many of which are not correct or incomplete
 * If no match, a few corrections are tried (removing abbreviations etc)
-* Addresses which are not possible to geocode get a (0,0) coordinate
-* Default tagging is amenity=restaurant. Some nodes get amenity=cafe or amenity=fast_food based on their names. Needs verification.
-* Restaurant names are not copy-edited, needs manual editing.
-* Some restaurants have a short lifespan. Please see the provided date for last inspection.
+* Addresses which are not possible to geocode to an exact location get a (0,0) coordinate and a GEOCODE tag. The output file may be processed further with [geocode2osm](https://github.com/osmno/geocode2osm) to locate the missing addresses.
+* Default tagging is *amenity=restaurant*. Some nodes get *amenity=cafe*, *amenity=fast_food* or *shop=bakery* based on their names. The tagging needs one by one verification.
+* Restaurant names are not copy-edited - alle names need manual verification.
+* Some restaurants have a short lifespan. Please see the provided date for last inspection. Mattilsynet targets 12 months inspection intervals.
+* Please see the provided date of creation to find the most recent/new restaurants.
 
 
 ### References ###
