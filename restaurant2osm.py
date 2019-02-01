@@ -18,7 +18,7 @@ import urllib2
 import re
 
 
-version = "0.2.0"
+version = "0.3.0"
 
 header = { "User-Agent": "osm-no/restaurant2osm/" + version }
 
@@ -205,6 +205,8 @@ if __name__ == '__main__':
 
 	debug = True
 	max_restaurants = 2000
+
+	message ("\nRestaurants from Mattilsynet inspections\n")
 	
 	if len(sys.argv) > 1:
 		input_query = sys.argv[1].decode("utf-8")
@@ -261,7 +263,25 @@ if __name__ == '__main__':
 			sys.exit()
 		else:
 			target_list = ['9999']  # Dummy entry to get one iteration
-	
+
+	# Get info about latest update
+
+	url = "https://hotell.difi.no/api/json/mattilsynet/smilefjes/tilsyn?"
+	request = urllib2.Request(url, headers=header)
+	file = urllib2.urlopen(request)
+	inspection_data = json.load(file)
+	file.close()
+
+	url += "page=%i" % inspection_data['pages']
+	request = urllib2.Request(url, headers=header)
+	file = urllib2.urlopen(request)
+	inspection_data = json.load(file)
+	file.close()
+
+	inspection = inspection_data['entries'][-1]
+	latest_inspection = "%s-%s-%s" % (inspection['dato'][4:8], inspection['dato'][2:4], inspection['dato'][0:2])
+	message ("Inspections in database:  %i\n" % inspection_data['posts'])
+	message ("Latest entry in database: %s (%s, %s)\n\n" % (latest_inspection, inspection['navn'], inspection['poststed'].title()))
 
 	# Read all data into memory	
 
@@ -350,6 +370,7 @@ if __name__ == '__main__':
 				if found:
 					if found['date_inspection'] < entry['date_inspection']:  # Keep last inspection date
 						found['date_inspection'] = entry['date_inspection']
+
 				elif name.find(" M/S") < 0:
 					restaurants.append(entry)
 					unique_restaurants += 1
@@ -357,6 +378,20 @@ if __name__ == '__main__':
 			total_pages = inspection_data['pages']
 
 		total_restaurants += inspection_data['posts']
+
+	# Update dates for reporting
+
+	latest_inspection = ""
+	first_inspection = "9999"
+	latest_restaurant = ""
+	
+	for restaurant in restaurants:
+		if restaurant['date_inspection'] > latest_inspection:
+			latest_inspection = restaurant['date_inspection']
+		if restaurant['date_inspection'] < first_inspection:
+			first_inspection = restaurant['date_inspection']
+		if restaurant['date_created'] > latest_restaurant:
+			latest_restaurant = restaurant['date_created']
 
 	message ("\nFound %i inspections and %i restaurants\n\n" % (total_restaurants, unique_restaurants))
 
@@ -467,7 +502,13 @@ if __name__ == '__main__':
 		file.write ('</osm>\n')
 		file.close()
 
-		message ("\nGeocoded %s of %s restaurants, written to file '%s'\n" % (count, unique_restaurants, filename))
+		message ("\nSuccessfully geocoded %i of %i restaurants\n" % (count, unique_restaurants))
+		message ("Written %i restaurants to file '%s'\n" % (unique_restaurants, filename))
+		if count < unique_restaurants:
+			message ("You may geocode the remaining %i restaurants with 'github.com/osmno/geocode2osm'\n" % (unique_restaurants - count))
+		message ("\nLatest restaurant: %s\n" % latest_restaurant)
+		message ("Latest inspection: %s\n" % latest_inspection)
+		message ("First inspection:  %s\n\n" % first_inspection)
 
 	elif unique_restaurants > max_restaurants:
 		message ("Too many restaurants, please reduce scope of search\n")
