@@ -3,7 +3,7 @@ Mattilsynet publishes their restaurant inspections on a REST service. This progr
 
 ### Usage ###
 
-<code>python restaurant2osm.py [filter]</code>
+<code>python restaurant2osm.py [filter] [first inspection date]</code>
 
 All filters from the REST service are permitted, plus one extra filter for municipality. Examples:
 * One municipality: <code>"kommune=Nes (Akershus)"</code> (include county name and "" if municipality name is not unique)
@@ -12,6 +12,8 @@ All filters from the REST service are permitted, plus one extra filter for munic
 * Restaurant name: <code>navn=Egon</code> (matches complete words only)
 * General queries: <code>query=Torvet</code> (matches complete words in any attribute, e.g. name and address)
 * Also combinations: <code>"query=Egon&poststed=Oslo"</code> (please include "")
+
+The optional second parameter will produce restaurants with first inspection date on or after the given date. Format: 2019-10-15.
 
 ### Notes ###
 
@@ -22,7 +24,9 @@ All filters from the REST service are permitted, plus one extra filter for munic
 * Default tagging is *amenity=restaurant*. Some nodes get *amenity=cafe*, *amenity=fast_food* or *shop=bakery* based on their names. The tagging needs one by one verification.
 * Restaurant names are not copy-edited - alle names need manual verification.
 * Some restaurants have a short lifespan. Please see the provided date for last inspection. Mattilsynet targets 12 months inspection intervals.
-* Please see the provided date of creation to find the most recent/new restaurants.
+* Please see the provided *date of creation* or *first inspection date* to find the most recent/new restaurants.
+* Please use the provided *municipality* or *county* to search for specific geographical areas.
+* A ready to use OSM file is provided [here](https://drive.google.com/drive/folders/1nhxjciiwOOIWmTlmXsQp-4WoYwZlsGZ6?usp=sharing).
 
 
 ### References ###
@@ -30,3 +34,4 @@ All filters from the REST service are permitted, plus one extra filter for munic
 * [Mattilsynet REST description](https://data.norge.no/data/mattilsynet/smilefjestilsyn-på-serveringssteder)
 * [Mattilsynet REST search page](https://hotell.difi.no/?dataset=mattilsynet/smilefjes/tilsyn)
 * [Kartverket address REST description](https://ws.geonorge.no/adresser/v1/)
+* [Ready-to-use OSM file](https://drive.google.com/drive/folders/1nhxjciiwOOIWmTlmXsQp-4WoYwZlsGZ6?usp=sharing)
