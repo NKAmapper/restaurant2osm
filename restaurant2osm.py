@@ -3,8 +3,9 @@
 
 # restaurant2osm
 # Extracts restaurants from Mattilsynet inspections and produces OSM file for import/update
-# Usage: restaurant2osm [filter]
+# Usage: restaurant2osm [filter] [first inspection date]
 # Example filters: "query=Egon", "poststed=Oslo", "postnr=4885", "kommune=Bergen" (combine filters with &, use "")
+# The program produces restaurants which have their first inspection date on or after the given optional parameter
 # Writes output file to "restaurants.osm"
 # Reads postal/municipality codes from Posten and counties from Kartverket
 
@@ -12,15 +13,20 @@
 import json
 import cgi
 import sys
+import time
 import csv
 import urllib
 import urllib2
 import re
 
 
-version = "0.3.0"
+version = "0.4.0"
 
-header = { "User-Agent": "osm-no/restaurant2osm/" + version }
+header = { "User-Agent": "osm-no/restaurant2osm" }
+
+debug = True
+
+max_restaurants = 100000
 
 transform_name = {
 	'Airport': 'airport',
@@ -142,6 +148,39 @@ def message (line):
 	sys.stdout.flush()
 
 
+# Open file/api, try up to 5 times, each time with double sleep time
+
+def try_urlopen (url):
+
+	tries = 0
+	while tries < 5:
+		try:
+			return urllib2.urlopen(url)
+
+		except urllib2.HTTPError, e:
+			if e.code in [429, 503, 504]:  # "Too many requests", "Service unavailable" or "Gateway timed out"
+				if tries  == 0:
+					message ("\n") 
+				message ("\r\tRetry %i in %ss... " % (tries + 1, 5 * (2**tries)))
+				time.sleep(5 * (2**tries))
+				tries += 1
+			else:
+				message ("\n\nHTTP error %i: %s\n" % (e.code, e.reason))
+				message ("%s\n" % url.get_full_url())
+				sys.exit()
+
+		except urllib2.URLError, e:  # Mostly "Connection reset by peer"
+			if tries  == 0:
+				message ("\n") 
+			message ("\r\tRetry %i in %ss... " % (tries + 1, 5 * (2**tries)))
+			time.sleep(5 * (2**tries))
+			tries += 1
+	
+	message ("\n\nError: %s\n" % e.reason)
+	message ("%s\n\n" % url.get_full_url())
+	sys.exit()
+
+
 # Concatenate address line
 
 def get_address(street, house_number, postal_code, city):
@@ -173,6 +212,8 @@ def geocode (street, house_number, house_letter, city):
 
 		if street[-1] == "-":  # Avoid Kartverket bug
 			street = street[0: len(street) - 1]
+		if ":" in street:
+			street = street.replace(":", " ").replace("  ", " ")
 
 		if house_letter:
 			url = "https://ws.geonorge.no/adresser/v1/sok?sok=%s&nummer=%s&bokstav=%s&poststed=%s&treffPerSide=10" %\
@@ -182,7 +223,7 @@ def geocode (street, house_number, house_letter, city):
 					 (urllib.quote(street.encode('utf-8')), house_number, urllib.quote(city.encode('utf-8')))
 
 		request = urllib2.Request(url)
-		file = urllib2.urlopen(request)
+		file = try_urlopen(request)
 		result = json.load(file)
 		file.close()
 
@@ -203,15 +244,17 @@ def geocode (street, house_number, house_letter, city):
 
 if __name__ == '__main__':
 
-	debug = True
-	max_restaurants = 2000
-
 	message ("\nRestaurants from Mattilsynet inspections\n")
 	
 	if len(sys.argv) > 1:
 		input_query = sys.argv[1].decode("utf-8")
 	else:
 		input_query = ""
+
+	if len(sys.argv) > 2:
+		input_date = sys.argv[2]
+	else:
+		input_date = "1900-01-01"
 
 	# Read county names
 
@@ -255,8 +298,6 @@ if __name__ == '__main__':
 			if postcode_districts[postcode]['municipality_name'] == municipality_target.title():
 				target_list.append(postcode)
 
-#	if target_list:
-#		message ("Postcodes for %s municipality: %s\n" % (municipality_target, str(target_list)))
 	if not(target_list):
 		if municipality_target:
 			message ("No postcodes found for %s municipality\n" % municipality_target)
@@ -281,7 +322,7 @@ if __name__ == '__main__':
 	inspection = inspection_data['entries'][-1]
 	latest_inspection = "%s-%s-%s" % (inspection['dato'][4:8], inspection['dato'][2:4], inspection['dato'][0:2])
 	message ("Inspections in database:  %i\n" % inspection_data['posts'])
-	message ("Latest entry in database: %s (%s, %s)\n\n" % (latest_inspection, inspection['navn'], inspection['poststed'].title()))
+#	message ("Latest entry in database: %s (%s, %s)\n\n" % (latest_inspection, inspection['navn'], inspection['poststed'].title()))
 
 	# Read all data into memory	
 
@@ -325,11 +366,14 @@ if __name__ == '__main__':
 						if word == word_from:
 							name = name.replace(word_from, word_to)
 
+				date_inspection = "%s-%s-%s" % (inspection['dato'][4:8], inspection['dato'][2:4], inspection['dato'][0:2])
+
 				entry['name'] = name.replace("  "," ").strip()
 				entry['original_name'] = inspection['navn'].strip()
 				entry['postcode'] = inspection['postnr']
 				entry['city'] = inspection['poststed'].strip()
-				entry['date_inspection'] = "%s-%s-%s" % (inspection['dato'][4:8], inspection['dato'][2:4], inspection['dato'][0:2])
+				entry['date_first_inspection'] = date_inspection
+				entry['date_last_inspection'] = date_inspection
 				entry['date_created'] = "20%s-%s-%s" % \
 							(inspection['tilsynsobjektid'][1:3], inspection['tilsynsobjektid'][3:5], inspection['tilsynsobjektid'][5:7])
 
@@ -368,8 +412,10 @@ if __name__ == '__main__':
 						found = previous
 
 				if found:
-					if found['date_inspection'] < entry['date_inspection']:  # Keep last inspection date
-						found['date_inspection'] = entry['date_inspection']
+					if found['date_last_inspection'] < date_inspection:
+						found['date_last_inspection'] = date_inspection
+					if found['date_first_inspection'] > date_inspection:
+						found['date_first_inspection'] = date_inspection
 
 				elif name.find(" M/S") < 0:
 					restaurants.append(entry)
@@ -386,10 +432,10 @@ if __name__ == '__main__':
 	latest_restaurant = ""
 	
 	for restaurant in restaurants:
-		if restaurant['date_inspection'] > latest_inspection:
-			latest_inspection = restaurant['date_inspection']
-		if restaurant['date_inspection'] < first_inspection:
-			first_inspection = restaurant['date_inspection']
+		if restaurant['date_last_inspection'] > latest_inspection:
+			latest_inspection = restaurant['date_last_inspection']
+		if restaurant['date_first_inspection'] < first_inspection:
+			first_inspection = restaurant['date_first_inspection']
 		if restaurant['date_created'] > latest_restaurant:
 			latest_restaurant = restaurant['date_created']
 
@@ -417,85 +463,88 @@ if __name__ == '__main__':
 
 		for restaurant in restaurants:
 
-			# Attempt to geocode address
+			if restaurant['date_first_inspection'] >= input_date:
 
-			latitude = 0.0
-			longitude = 0.0
+				# Attempt to geocode address
 
-			result = geocode (restaurant['street'], restaurant['house_number'], restaurant['house_letter'], restaurant['city'])
+				latitude = 0.0
+				longitude = 0.0
 
-			if result:
-				latitude = result[0]
-				longitude = result[1]
-				count += 1
+				result = geocode (restaurant['street'], restaurant['house_number'], restaurant['house_letter'], restaurant['city'])
 
-			else:
-				# Attempt new geocoding after fixing street name
+				if result:
+					latitude = result[0]
+					longitude = result[1]
+					count += 1
 
-				street = restaurant['street'] + " "
-				old_street = street
-				for word_from, word_to in transform_address.iteritems():
-					street = street.replace(word_from, word_to)
-					street = street.replace(word_from.upper(), word_to.upper())
-
-				if street != old_street:
-					result = geocode (street, restaurant['house_number'], restaurant['house_letter'], restaurant['city'])
-					if result:
-						latitude = result[0]
-						longitude = result[1]
-						count += 1
-
-			node_id -= 1
-
-			file.write ('  <node id="%i" lat="%f" lon="%f">\n' % (node_id, latitude, longitude))
-
-			# Decide amenity type
-
-			amenity = "restaurant"
-			for keyword, amenity_value in amenities.iteritems():
-				if restaurant['name'].lower().find(keyword.lower()) >= 0:
-					amenity = amenity_value
-
-			# Produce tags
-
-			if amenity == "hotel":
-				make_osm_line("amenity", "restaurant")
-				make_osm_line("FIXME", "Please consider tourism=hotel tagging, or separate node")
-			elif amenity == "bakery":
-				make_osm_line("amenity", "cafe")
-				make_osm_line("shop", "bakery")
-			else:
-				make_osm_line("amenity", amenity)
-
-			make_osm_line("name", restaurant['name'])
-			make_osm_line("ADDRESS", restaurant['original_address'])
-			make_osm_line("DATE_CREATED", restaurant['date_created'])
-			make_osm_line("DATE_INSPECTION", restaurant['date_inspection'])
-
-			if restaurant['name'] != restaurant['original_name']:
-				make_osm_line("ORIGINAL_NAME", restaurant['original_name'])
-
-			if (latitude == 0.0) and (longitude ==0.0):  # Tag for geocoding using geocode2osm
-				make_osm_line ("GEOCODE", "yes")
-
-			# Find municipality and county from looking up postal code translation
-
-			if restaurant['postcode'] in postcode_districts:
-				make_osm_line("MUNICIPALITY", postcode_districts[ restaurant['postcode'] ]['municipality_name'])
-				make_osm_line("COUNTY", county_names[ postcode_districts[ restaurant['postcode'] ]['municipality_ref'][0:2] ])
-			else:
-				message ("Postcode not found: %x\n" % restaurant['postcode'])
-
-			# Done with OSM store node
-
-			file.write ('  </node>\n')
-
-			if not(result):
-				message ("NOT FOUND: %s --> %s" % (restaurant['name'], restaurant['original_address']))
-				if restaurant['address'] != restaurant['original_address']:
-					message (" (%s)\n" % restaurant['address'])
 				else:
-					message ("\n")
+					# Attempt new geocoding after fixing street name
+
+					street = restaurant['street'] + " "
+					old_street = street
+					for word_from, word_to in transform_address.iteritems():
+						street = street.replace(word_from, word_to)
+						street = street.replace(word_from.upper(), word_to.upper())
+
+					if street != old_street:
+						result = geocode (street, restaurant['house_number'], restaurant['house_letter'], restaurant['city'])
+						if result:
+							latitude = result[0]
+							longitude = result[1]
+							count += 1
+
+				node_id -= 1
+
+				file.write ('  <node id="%i" lat="%f" lon="%f">\n' % (node_id, latitude, longitude))
+
+				# Decide amenity type
+
+				amenity = "restaurant"
+				for keyword, amenity_value in amenities.iteritems():
+					if restaurant['name'].lower().find(keyword.lower()) >= 0:
+						amenity = amenity_value
+
+				# Produce tags
+
+				if amenity == "hotel":
+					make_osm_line("amenity", "restaurant")
+					make_osm_line("FIXME", "Please consider tourism=hotel tagging, or separate node")
+				elif amenity == "bakery":
+					make_osm_line("amenity", "cafe")
+					make_osm_line("shop", "bakery")
+				else:
+					make_osm_line("amenity", amenity)
+
+				make_osm_line("name", restaurant['name'])
+				make_osm_line("ADDRESS", restaurant['original_address'])
+				make_osm_line("CREATED", restaurant['date_created'])
+				make_osm_line("FIRST_INSPECTION", restaurant['date_first_inspection'])
+				make_osm_line("LAST_INSPECTION", restaurant['date_last_inspection'])
+
+				if restaurant['name'] != restaurant['original_name']:
+					make_osm_line("ORIGINAL_NAME", restaurant['original_name'])
+
+				if (latitude == 0.0) and (longitude ==0.0):  # Tag for geocoding using geocode2osm
+					make_osm_line ("GEOCODE", "yes")
+
+				# Find municipality and county from looking up postal code translation
+
+				if restaurant['postcode'] in postcode_districts:
+					make_osm_line("MUNICIPALITY", postcode_districts[ restaurant['postcode'] ]['municipality_name'])
+					make_osm_line("COUNTY", county_names[ postcode_districts[ restaurant['postcode'] ]['municipality_ref'][0:2] ])
+				else:
+					message ("Postcode not found: %s\n" % restaurant['postcode'])
+
+				# Done with OSM store node
+
+				file.write ('  </node>\n')
+
+				if not(result):
+					message ("NOT FOUND: %s --> %s" % (restaurant['name'], restaurant['original_address']))
+					if restaurant['address'] != restaurant['original_address']:
+						message (" (%s)\n" % restaurant['address'])
+					else:
+						message ("\n")
 
 		# Wrap up
 
