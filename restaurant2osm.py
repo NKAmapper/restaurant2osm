@@ -1,14 +1,15 @@
-#!/usr/bin/env python
+#!/usr/bin/env python2
 # -*- coding: utf8
 
-# restaurant2osm
-# Extracts restaurants from Mattilsynet inspections and produces OSM file for import/update
-# Usage: restaurant2osm [filter] [first inspection date]
-# Example filters: "query=Egon", "poststed=Oslo", "postnr=4885", "kommune=Bergen" (combine filters with &, use "")
-# The program produces restaurants which have their first inspection date on or after the given optional parameter
-# Writes output file to "restaurants.osm"
-# Reads postal/municipality codes from Posten and counties from Kartverket
-
+"""
+restaurant2osm
+Extracts restaurants from Mattilsynet inspections and produces OSM file for import/update
+Usage: restaurant2osm [filter] [first inspection date]
+Example filters: "query=Egon", "poststed=Oslo", "postnr=4885", "kommune=Bergen" (combine filters with &, use "")
+The program produces restaurants which have their first inspection date on or after the given optional parameter
+Writes output file to "restaurants.osm"
+Reads postal/municipality codes from Posten and counties from Kartverket
+"""
 
 import json
 import cgi
@@ -129,9 +130,10 @@ amenities = {
 }
 
 
-# Produce a tag for OSM file
 
 def make_osm_line(key,value):
+
+	"""Produce a tag for OSM file"""
 
 	global file
 
@@ -140,17 +142,17 @@ def make_osm_line(key,value):
 		file.write ('    <tag k="' + key + '" v="' + encoded_value + '" />\n')
 
 
-# Output message
-
 def message (line):
+
+	"""Output message"""
 
 	sys.stdout.write (line)
 	sys.stdout.flush()
 
 
-# Open file/api, try up to 5 times, each time with double sleep time
-
 def try_urlopen (url):
+
+	"""Open file/api, try up to 5 times, each time with double sleep time"""
 
 	tries = 0
 	while tries < 5:
@@ -181,9 +183,9 @@ def try_urlopen (url):
 	sys.exit()
 
 
-# Concatenate address line
-
 def get_address(street, house_number, postal_code, city):
+
+	"""Concatenate address line"""
 
 	address = street
 
@@ -202,9 +204,8 @@ def get_address(street, house_number, postal_code, city):
 	return address.strip()
 
 
-# Geocoding with Kartverket Matrikkel/Vegnavn REST service
-
 def geocode (street, house_number, house_letter, city):
+	"""Geocoding with Kartverket Matrikkel/Vegnavn REST service"""
 
 #	time.sleep(1)
 
@@ -240,11 +241,11 @@ def geocode (street, house_number, house_letter, city):
 		return None
 
 
-# Main program
-
 if __name__ == '__main__':
 
-	message ("\nRestaurants from Mattilsynet inspections\n")
+	"""Main program"""
+
+	message ("\nRestaurants from Mattilsynet's inspections\n")
 	
 	if len(sys.argv) > 1:
 		input_query = sys.argv[1].decode("utf-8")
@@ -540,7 +541,7 @@ if __name__ == '__main__':
 				file.write ('  </node>\n')
 
 				if not(result):
-					message ("NOT FOUND: %s --> %s" % (restaurant['name'], restaurant['original_address']))
+					message ("Address not geocoded: %s --> %s" % (restaurant['name'], restaurant['original_address']))
 					if restaurant['address'] != restaurant['original_address']:
 						message (" (%s)\n" % restaurant['address'])
 					else:
