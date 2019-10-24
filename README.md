@@ -1,6 +1,10 @@
 # restaurant2osm
 
-Mattilsynet publishes their restaurant inspections on a REST service. This program loads the inspection data from the REST service and extacts the restaurants.
+This is a program to extract resturants from the Norwegian Food Safety Authority's Smiley Face Inspections (Mattilsynets Smilefjesinspeksjoner) food and safety inspections of all restaurants and places where food is prepared.
+
+Mattilsynet publishes their restaurant inspections on a REST service, and this program loads the inspection data from the REST service, extacts the restaurants and convert them to OpenStreetMap-data format
+
+For those only wanting to import restaurants into OpenStreetMap and not do conversion themselves an already converted file is available here [link](https://drive.google.com/drive/folders/1nhxjciiwOOIWmTlmXsQp-4WoYwZlsGZ6?usp=sharing)
 
 ## Usage
 
@@ -59,4 +63,3 @@ out skel qt;
 - [Mattilsynet REST description](https://data.norge.no/data/mattilsynet/smilefjestilsyn-på-serveringssteder)
 - [Mattilsynet REST search page](https://hotell.difi.no/?dataset=mattilsynet/smilefjes/tilsyn)
 - [Kartverket address REST description](https://ws.geonorge.no/adresser/v1/)
-- [Ready-to-use OSM file](https://drive.google.com/drive/folders/1nhxjciiwOOIWmTlmXsQp-4WoYwZlsGZ6?usp=sharing)
