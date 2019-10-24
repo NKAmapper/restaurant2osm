@@ -38,6 +38,8 @@ transform_name = {
 	'Brygge': 'brygge',
 	u'Cafè': u'Café',
 	u'cafè': u'café',
+	u'Caffe': u'café',
+	'Kafè' : 'kafé',
 	'Gate': 'gate',
 	u'Gård': u'gård',
 	'Hagesenter': 'hagesenter',
@@ -45,7 +47,9 @@ transform_name = {
 	'Hotell': 'hotell',
 	'Hos': 'hos',
 	'I': 'i',
+	'isushi': 'iSushi',
 	'Lufthavn': 'lufthavn',
+	'Mc Donald': "McDonald's",
 	'McDonald': "McDonald's",
 	'McDonalds': "McDonald's",
 	u'McDonald´s': "McDonald's",
@@ -59,6 +63,7 @@ transform_name = {
 	'Storsenter': 'storsenter',
 	'Torg': 'torg',
 	'Torv': 'torv',
+	# TODO takeaway, take-away, take
 	'Veg': 'veg',
 	'Vei': 'vei',
 	'AVD.': '',
@@ -118,10 +123,11 @@ amenities = {
 	'kiosk': 'cafe',
 	'iskrembar': 'cafe',
 	'juice': 'cafe',
-	'hotel': 'hotel',
-	'Staarbucks': 'cafe',
+	'hotel': '', #TODO
+	'Starbucks': 'cafe',
 	u'Jordbærpikene': 'cafe',
 	'burger': 'fast_food',
+	'kebab': 'fast_food',
 	'Subway': 'fast_food',
 	u'gatekjøkken': 'fast_food',
 	'McDonald': 'fast_food',
@@ -373,6 +379,7 @@ if __name__ == '__main__':
 				entry['original_name'] = inspection['navn'].strip()
 				entry['postcode'] = inspection['postnr']
 				entry['city'] = inspection['poststed'].strip()
+				entry['ref:mattilsynet'] = inspection['']
 				entry['date_first_inspection'] = date_inspection
 				entry['date_last_inspection'] = date_inspection
 				entry['date_created'] = "20%s-%s-%s" % \
