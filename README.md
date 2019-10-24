@@ -32,6 +32,28 @@ The optional second parameter will produce restaurants with first inspection dat
 - Please use the provided _municipality_ or _county_ to search for specific geographical areas.
 - A ready to use OSM file is provided [here](https://drive.google.com/drive/folders/1nhxjciiwOOIWmTlmXsQp-4WoYwZlsGZ6?usp=sharing).
 
+## Importing the data into OSM
+
+1. Open [JOSM](https://josm.openstreetmap.de/) and activate [Expert Mode](https://josm.openstreetmap.de/wiki/Help/ExpertMode) to be able to download data from the Overpass API
+2. Download a new layer from overpass with this query
+
+```overpassql
+[out:json][timeout:25];
+{{geocodeArea:bergen}}->.searchArea;
+(
+  nwr["amenity"="cafe"](area.searchArea);
+  nwr["amenity"="restaurant"](area.searchArea);
+  nwr["amenity"="fast_food"](area.searchArea);
+  nwr["tourism"="hotel"](area.searchArea);
+  nwr["tourism"="bakery"](area.searchArea);
+);
+out body;
+>;
+out skel qt;
+```
+
+3. Load the output file generated from restaurants2osm.py into JOSM and start comparing them, either by copying everything in one layer over to the other or by using [Conflation](https://wiki.openstreetmap.org/wiki/JOSM/Plugins/Conflation)
+
 ## References
 
 - [Mattilsynet REST description](https://data.norge.no/data/mattilsynet/smilefjestilsyn-på-serveringssteder)
