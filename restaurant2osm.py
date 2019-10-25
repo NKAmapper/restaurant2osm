@@ -529,7 +529,7 @@ if __name__ == '__main__':
 				make_osm_line("LAST_INSPECTION", restaurant['date_last_inspection'])
 
 				if restaurant['name'] != restaurant['original_name']:
-					make_osm_line("official_name", restaurant['original_name'])
+					make_osm_line("ORIGINAL_NAME", restaurant['original_name'])
 
 				if (latitude == 0.0) and (longitude ==0.0):  # Tag for geocoding using geocode2osm
 					make_osm_line ("GEOCODE", "yes")
