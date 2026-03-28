@@ -22,7 +22,7 @@ The optional second parameter will produce restaurants with first inspection dat
 - Some restaurants have a short lifespan. Please see the provided date for last inspection. Mattilsynet targets 12 months inspection intervals, but 24 months intervals frequently occures.
 - Please see the provided _date of creation_ or _first inspection date_ to find the most recent/new restaurants.
 - Please use the provided _municipality_ or _county_ to search for specific geographical areas.
-- A ready to use OSM file is provided [here](https://drive.google.com/drive/folders/1nhxjciiwOOIWmTlmXsQp-4WoYwZlsGZ6?usp=sharing).
+- A ready to use OSM file is provided [here](https://www.jottacloud.com/s/059f4e21889c60d4e4aaa64cc857322b134).
 
 ## References
 
