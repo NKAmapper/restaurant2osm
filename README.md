@@ -26,6 +26,6 @@ The optional second parameter will produce restaurants with first inspection dat
 
 ## References
 
-- [About Mattilsynet inspections]((https://www.mattilsynet.no/mat-og-drikke/forbrukere/smilefjesordningen)
+- [About Mattilsynet inspections](https://www.mattilsynet.no/mat-og-drikke/forbrukere/smilefjesordningen)
 - [Kartverket address REST description](https://ws.geonorge.no/adresser/v1/)
 - [Ready-to-use OSM file](https://drive.google.com/drive/folders/1nhxjciiwOOIWmTlmXsQp-4WoYwZlsGZ6?usp=sharing)
