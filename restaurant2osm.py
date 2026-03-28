@@ -1,66 +1,50 @@
-#!/usr/bin/env python2
+#!/usr/bin/env python3
 # -*- coding: utf8
 
-"""
-restaurant2osm
-Extracts restaurants from Mattilsynet inspections and produces OSM file for import/update
-Usage: restaurant2osm [filter] [first inspection date]
-Example filters: "query=Egon", "poststed=Oslo", "postnr=4885", "kommune=Bergen" (combine filters with &, use "")
-The program produces restaurants which have their first inspection date on or after the given optional parameter
-Writes output file to "restaurants.osm"
-Reads postal/municipality codes from Posten and counties from Kartverket
-"""
+# restaurant2osm
+# Extracts restaurants from Mattilsynet inspections and produces OSM file for import/update
+# Usage: restaurant2osm [first inspection date]
+# The program produces restaurants which have their first inspection date on or after the given optional parameter
+# Writes output file to "restaurants.osm"
+# Reads postal/municipality codes from Posten and counties from Kartverket
+
 
 import json
-import cgi
+import html
 import sys
 import time
 import csv
-import urllib
-import urllib2
+import urllib.request, urllib.parse, urllib.error
 import re
+import os.path
+from io import TextIOWrapper
+from xml.etree import ElementTree
 
 
-version = "0.4.0"
+version = "1.2.0"
 
 header = { "User-Agent": "osm-no/restaurant2osm" }
+
+osm_filename = "restaurants.osm"
+
+geocode_address = True  # True to geocode addresses, else get empty coordinates (0, 0)
 
 debug = True
 
 max_restaurants = 100000
 
 transform_name = {
-	'Airport': 'airport',
-	'Alle': u'allé',
-	'alle': u'allé',
-	'AMFI': u'Amfi',
-	'Bakeri': 'bakeri',
-	'Brygge': 'brygge',
-	u'Cafè': u'Café',
-	u'cafè': u'café',
+	'AMFI': 'Amfi',
 	'Gate': 'gate',
-	u'Gård': u'gård',
-	'Hagesenter': 'hagesenter',
-	'Hotel': 'hotel',
-	'Hotell': 'hotell',
-	'Hos': 'hos',
 	'I': 'i',
-	'Lufthavn': 'lufthavn',
+	'IKEA': 'Ikea',
 	'McDonald': "McDonald's",
 	'McDonalds': "McDonald's",
-	u'McDonald´s': "McDonald's",
-	u'McDonald`s': "McDonald's",
+	"Mcdonald'S": "McDonald's",
 	'Og': 'og',
-	'Plass': 'plass',
-	u'På': u'på',
-	'Senter': 'senter',
-	'Sentrum': 'sentrum',
-	'Stasjon': 'stasjon',
-	'Storsenter': 'storsenter',
-	'Torg': 'torg',
-	'Torv': 'torv',
-	'Veg': 'veg',
-	'Vei': 'vei',
+	'På': 'på',
+	'Avdeling': '',
+	'avdeling': '',
 	'AVD.': '',
 	'AVD': '',
 	'Avd.': '',
@@ -72,6 +56,16 @@ transform_name = {
 	'as': '',
 	'A/S': '',
 	'a/s': '',
+	'A.S:': '',
+	'a.s.': '',
+	'As.': '',
+	'as.': '',
+	'A.S': '',
+	'a.s': '',
+	'D/A': '',
+	'L/L': '',
+	'LL': '',
+	'A/L': '',
 	'ANS': '',
 	'ans': '',
 	'DA': '',
@@ -99,19 +93,19 @@ transform_address = {
 	'br.': 'brygge ',
 	'v.': 'vei ',
 	'vn.': 'veien',
-	u'è': u'é'
+	'è': 'é'
 }
 
 amenities = {
 	'kafe': 'cafe',
 	'cafe': 'cafe',
-	u'kafé': 'cafe',
-	u'café': 'cafe',
+	'kafé': 'cafe',
+	'café': 'cafe',
 	'kaffe': 'cafe',
 	'coffee': 'cafe',
 	'espresso': 'cafe',
 	'baker': 'bakery',
-	u'brød': 'bakery',
+	'brød': 'bakery',
 	'kafeteria': 'cafe',
 	'konditori': 'cafe',
 	'conditori': 'cafe',
@@ -120,10 +114,11 @@ amenities = {
 	'juice': 'cafe',
 	'hotel': 'hotel',
 	'Staarbucks': 'cafe',
-	u'Jordbærpikene': 'cafe',
+	'Jordbærpikene': 'cafe',
 	'burger': 'fast_food',
+	'kebab': 'fast_food',
 	'Subway': 'fast_food',
-	u'gatekjøkken': 'fast_food',
+	'gatekjøkken': 'fast_food',
 	'McDonald': 'fast_food',
 	'Mc Donald': 'fast_food',
 	'Burger King': 'fast_food'
@@ -131,61 +126,55 @@ amenities = {
 
 
 
-def make_osm_line(key,value):
+# Produce a tag for OSM file
 
-	"""Produce a tag for OSM file"""
+def make_osm_line(key,value):
 
 	global file
 
 	if value:
-		encoded_value = cgi.escape(value.encode('utf-8'),True)
+		encoded_value = html.escape(value).strip()
 		file.write ('    <tag k="' + key + '" v="' + encoded_value + '" />\n')
 
 
-def message (line):
 
-	"""Output message"""
+# Output message
+
+def message (line):
 
 	sys.stdout.write (line)
 	sys.stdout.flush()
 
 
-def try_urlopen (url):
 
-	"""Open file/api, try up to 5 times, each time with double sleep time"""
+# Open file/api, try up to 5 times, each time with double sleep time
+
+def try_urlopen (url):
 
 	tries = 0
 	while tries < 5:
 		try:
-			return urllib2.urlopen(url)
+			return urllib.request.urlopen(url)
 
-		except urllib2.HTTPError, e:
-			if e.code in [429, 503, 504]:  # "Too many requests", "Service unavailable" or "Gateway timed out"
-				if tries  == 0:
-					message ("\n") 
-				message ("\r\tRetry %i in %ss... " % (tries + 1, 5 * (2**tries)))
-				time.sleep(5 * (2**tries))
-				tries += 1
-			else:
-				message ("\n\nHTTP error %i: %s\n" % (e.code, e.reason))
-				message ("%s\n" % url.get_full_url())
-				sys.exit()
-
-		except urllib2.URLError, e:  # Mostly "Connection reset by peer"
+		except urllib.error.HTTPError as e:
 			if tries  == 0:
 				message ("\n") 
-			message ("\r\tRetry %i in %ss... " % (tries + 1, 5 * (2**tries)))
+			message ("\r\tHTTP error %i %s. Retry %i in %ss... " % (e.code, e.reason, tries + 1, 5 * (2**tries)))
 			time.sleep(5 * (2**tries))
 			tries += 1
+			error = e
+
+#		except urllib.error.URLError as e:  # Mostly "Connection reset by peer"
 	
-	message ("\n\nError: %s\n" % e.reason)
+	message ("\n\nError: %s\n" % error.reason)
 	message ("%s\n\n" % url.get_full_url())
 	sys.exit()
 
 
-def get_address(street, house_number, postal_code, city):
 
-	"""Concatenate address line"""
+# Concatenate address line
+
+def get_address(street, house_number, postal_code, city):
 
 	address = street
 
@@ -204,8 +193,10 @@ def get_address(street, house_number, postal_code, city):
 	return address.strip()
 
 
+
+# Geocoding with Kartverket Matrikkel/Vegnavn REST service
+
 def geocode (street, house_number, house_letter, city):
-	"""Geocoding with Kartverket Matrikkel/Vegnavn REST service"""
 
 #	time.sleep(1)
 
@@ -218,12 +209,12 @@ def geocode (street, house_number, house_letter, city):
 
 		if house_letter:
 			url = "https://ws.geonorge.no/adresser/v1/sok?sok=%s&nummer=%s&bokstav=%s&poststed=%s&treffPerSide=10" %\
-					 (urllib.quote(street.encode('utf-8')), house_number, house_letter, urllib.quote(city.encode('utf-8')))
+					 (urllib.parse.quote(street), house_number, house_letter, urllib.parse.quote(city))
 		else:
 			url = "https://ws.geonorge.no/adresser/v1/sok?sok=%s&nummer=%s&poststed=%s&treffPerSide=10" %\
-					 (urllib.quote(street.encode('utf-8')), house_number, urllib.quote(city.encode('utf-8')))
+					 (urllib.parse.quote(street), house_number, urllib.parse.quote(city))
 
-		request = urllib2.Request(url)
+		request = urllib.request.Request(url)
 		file = try_urlopen(request)
 		result = json.load(file)
 		file.close()
@@ -241,190 +232,184 @@ def geocode (street, house_number, house_letter, city):
 		return None
 
 
+
+# Main program
+
 if __name__ == '__main__':
 
-	"""Main program"""
+	message ("\nRestaurants from Mattilsynet inspections\n")
 
-	message ("\nRestaurants from Mattilsynet's inspections\n")
-	
 	if len(sys.argv) > 1:
-		input_query = sys.argv[1].decode("utf-8")
-	else:
-		input_query = ""
-
-	if len(sys.argv) > 2:
-		input_date = sys.argv[2]
+		input_date = sys.argv[1]
 	else:
 		input_date = "1900-01-01"
 
 	# Read county names
 
-	filename = "https://register.geonorge.no/api/sosi-kodelister/fylkesnummer.json?"
-	file = urllib2.urlopen(filename)
+	filename = "https://ws.geonorge.no/kommuneinfo/v1/fylker"
+	file = urllib.request.urlopen(filename)
 	county_data = json.load(file)
 	file.close()
 
 	county_names = {}
-	for county in county_data['containeditems']:
-		if county['status'] == "Gyldig":
-			county_names[county['codevalue']] = county['label'].strip()
+	for county in county_data:
+		county_names[county['fylkesnummer']] = county['fylkesnavn'].strip()
 
-	# Read postal codes and municipality codes from Posten (updated daily)
+	# Read postal codes and municipality codes from Posten (updated daily). Windows-1252 coding.
 
-	file = urllib2.urlopen('https://www.bring.no/postnummerregister-ansi.txt')
-	postal_codes = csv.DictReader(file, fieldnames=['zip','post_city','municipality_ref','municipality_name','type'], delimiter="\t")
+	file = urllib.request.urlopen('https://www.bring.no/postnummerregister-ansi.txt')
+	postal_codes = csv.DictReader(TextIOWrapper(file, "windows-1252"), fieldnames=['zip','post_city','municipality_ref','municipality_name','type'], delimiter="\t")
 	postcode_districts = {}
 	for row in postal_codes:
 		postcode_districts[ row['zip'] ] = {
-			'city': row['post_city'].decode("windows-1252").strip().title(),
+			'city': row['post_city'].strip().title(),
 			'municipality_ref': row['municipality_ref'],
-			'municipality_name': row['municipality_name'].decode("windows-1252").strip().title()
+			'municipality_name': row['municipality_name'].strip().title()
 		}
 	file.close()
 
-	# If municipality is a filter then get all post codes for municipality
 
-	municipality_target = ""
-	query_split = input_query.split("&")
-	for query_part in query_split:
-		if query_part[0:8] == "kommune=":
-			municipality_target = query_part[8:]
-			if municipality_target == "Oslo":  # More efficient to get Oslo through one post district query
-				input_query = input_query.replace("kommune=Oslo", "poststed=Oslo")
-				municipality_target = ""
+	# Load OSM file from previous run
 
-	target_list = []
-	if municipality_target:
-		for postcode in postcode_districts:
-			if postcode_districts[postcode]['municipality_name'] == municipality_target.title():
-				target_list.append(postcode)
+	message ("\nLoading previous restaurants from '%s' file... " % osm_filename)
 
-	if not(target_list):
-		if municipality_target:
-			message ("No postcodes found for %s municipality\n" % municipality_target)
-			sys.exit()
-		else:
-			target_list = ['9999']  # Dummy entry to get one iteration
+	old_restaurants = {}
 
-	# Get info about latest update
+	if os.path.isfile(osm_filename):
 
-	url = "https://hotell.difi.no/api/json/mattilsynet/smilefjes/tilsyn?"
-	request = urllib2.Request(url, headers=header)
-	file = urllib2.urlopen(request)
-	inspection_data = json.load(file)
-	file.close()
+		tree = ElementTree.parse(osm_filename)
+		root = tree.getroot()
 
-	url += "page=%i" % inspection_data['pages']
-	request = urllib2.Request(url, headers=header)
-	file = urllib2.urlopen(request)
-	inspection_data = json.load(file)
-	file.close()
+		count_all = 0
+		count_old = 0
 
-	inspection = inspection_data['entries'][-1]
-	latest_inspection = "%s-%s-%s" % (inspection['dato'][4:8], inspection['dato'][2:4], inspection['dato'][0:2])
-	message ("Inspections in database:  %i\n" % inspection_data['posts'])
-#	message ("Latest entry in database: %s (%s, %s)\n\n" % (latest_inspection, inspection['navn'], inspection['poststed'].title()))
+		for node in root.iter('node'):
 
-	# Read all data into memory	
+			count_all += 1
+			ref_tag = node.find("tag[@k='ref:mattilsynet']")
+			if ref_tag != None:
+				ref = ref_tag.get("v")
+				latitude = float(node.get("lat"))
+				longitude = float(node.get("lon"))
+				if latitude != 0.0 and longitude != 0.0:
+					old_restaurants[ref] = {
+						'latitude': latitude,
+						'longitude': longitude
+					}
 
-	message ("Loading data... ")
+					geocode_tag = node.find("tag[@k='GEOMETHOD']")
+					if geocode_tag != None:
+						old_restaurants[ref]['geocode_method'] = geocode_tag.get("v")
+
+					geocode_tag = node.find("tag[@k='GEORESULT']")
+					if geocode_tag != None:
+						old_restaurants[ref]['geocode_result'] = geocode_tag.get("v")
+
+					count_old += 1
+
+		message ("\nFound %i of %i restaurants with coordinates\n" % (count_old, count_all))
+
+	else:
+		message ("\nNo such file found, creating file for all restaurants from scratch\n")
+
+
+	# Load all inspections from Mattilsynet
+
+	message ("\nLoading inspections from Mattilsynet... ")
 
 	restaurants = []
 	total_restaurants = 0
 	unique_restaurants = 0
 
-	for target in target_list:  # Iterate all post codes for municipality, if filter
+	url = "https://matnyttig.mattilsynet.no/smilefjes/tilsyn.csv"
+	request = urllib.request.Request(url)  #, headers=header)
+	file = urllib.request.urlopen(request)
 
-		query = input_query
-		if municipality_target:
-			query = query.replace("kommune=" + municipality_target, "postnr=" + target)
+	csv_reader = csv.DictReader(TextIOWrapper(file), delimiter=";")
 
-		page = 0
-		total_pages = 9999
+	for inspection in csv_reader:  # Iterate all inspections on result page
 
-		while page < total_pages:  # Iterate all pages with results of query
+		entry = {}
 
-			page += 1
-			url = "https://hotell.difi.no/api/json/mattilsynet/smilefjes/tilsyn?%s&page=%i" % \
-					(urllib.quote(query.encode("utf-8"), safe="&="), page)
-			request = urllib2.Request(url, headers=header)
-			file = urllib2.urlopen(request)
-			inspection_data = json.load(file)
-			file.close()
+		# Fix name
 
-			for inspection in inspection_data['entries']:  # Iterate all inspections on result page
+		name = inspection['navn']
+		if name == name.upper():
+			name = name.title()
+		name_split = name.split()
+		name = ""
+		for word in name_split:  # [1:]:
+			new_word = word
+			for word_from, word_to in iter(transform_name.items()):
+				if word == word_from or word == word_from + "," or word == word_from + "-":
+					new_word = new_word.replace(word_from, word_to)
+			name += new_word + " "
+		name = name.replace("è", "é").replace("`", "'").replace("´", "'")
+		name = name.replace("  "," ").replace("  ", " ").replace(" ,", ",").strip(",").strip("-").strip("/").strip()
+		if len(name) > 1:
+			name = name[0].upper() + name[1:]
 
-				entry = {}
+		date_inspection = "%s-%s-%s" % (inspection['dato'][4:8], inspection['dato'][2:4], inspection['dato'][0:2])
 
-				# Fix name
+		entry['ref'] = inspection['tilsynsobjektid'].replace("_Tilsynsobjekt", "")  #[1:20]  #[20:25]
+		entry['orgnr'] = inspection['orgnummer']
+		entry['name'] = name
+		entry['original_name'] = inspection['navn'].strip()
+		entry['postcode'] = inspection['postnr']
+		entry['city'] = inspection['poststed'].strip()
+		entry['date_first_inspection'] = date_inspection
+		entry['date_last_inspection'] = date_inspection
+		entry['date_created'] = "20%s-%s-%s" % \
+					(inspection['tilsynsobjektid'][1:3], inspection['tilsynsobjektid'][3:5], inspection['tilsynsobjektid'][5:7])
 
-				name = inspection['navn']
-				if name == name.upper():
-					name = name.title()
-				name_split = name.split()
-				for word in name_split[1:]:
-					for word_from, word_to in transform_name.iteritems():
-						if word == word_from:
-							name = name.replace(word_from, word_to)
+		street = inspection['adrlinje1'].strip()
+		original_street = street
+		if inspection['adrlinje2']:
+			street = inspection['adrlinje2'].strip()
+			original_street = original_street + ", " + inspection['adrlinje2'].strip()
 
-				date_inspection = "%s-%s-%s" % (inspection['dato'][4:8], inspection['dato'][2:4], inspection['dato'][0:2])
+		# Find house number and unit/letter
 
-				entry['name'] = name.replace("  "," ").strip()
-				entry['original_name'] = inspection['navn'].strip()
-				entry['postcode'] = inspection['postnr']
-				entry['city'] = inspection['poststed'].strip()
-				entry['date_first_inspection'] = date_inspection
-				entry['date_last_inspection'] = date_inspection
-				entry['date_created'] = "20%s-%s-%s" % \
-							(inspection['tilsynsobjektid'][1:3], inspection['tilsynsobjektid'][3:5], inspection['tilsynsobjektid'][5:7])
+		reg = re.search(r'(.*) [0-9]+[ \-\/]+([0-9]+)[ ]*([A-Za-z]?)$', street)
+		if not(reg):
+			reg = re.search(r'(.*) ([0-9]+)[ ]*([A-Za-z]?)$', street)				
+		if reg:
+			street = reg.group(1).strip()
+			house_number = reg.group(2)
+			house_letter = reg.group(3)
+		else:
+			house_number = ""
+			house_letter = ""
 
-				street = inspection['adrlinje1'].strip()
-				original_street = street
-				if inspection['adrlinje2']:
-					street = inspection['adrlinje2'].strip()
-					original_street = original_street + ", " + inspection['adrlinje2'].strip()
+		address = get_address(street, house_number + house_letter, entry['postcode'], entry['city'])
 
-				# Find house number and unit/letter
+		entry['street'] = street
+		entry['house_number'] = house_number
+		entry['house_letter'] = house_letter
+		entry['address'] = address
+		entry['original_address'] = get_address(original_street, "", inspection['postnr'], inspection['poststed'])
 
-				reg = re.search(r'(.*) [0-9]+[ \-\/]+([0-9]+)[ ]*([A-Za-z]?)$', street)
-				if not(reg):
-					reg = re.search(r'(.*) ([0-9]+)[ ]*([A-Za-z]?)$', street)				
-				if reg:
-					street = reg.group(1).strip()
-					house_number = reg.group(2)
-					house_letter = reg.group(3)
-				else:
-					house_number = ""
-					house_letter = ""
+		# Look up identical previous restaurants to avoid duplicates
 
-				address = get_address(street, house_number + house_letter, entry['postcode'], entry['city'])
+		found = None
+		for previous in restaurants:
+			if (previous['address'] == address) and (previous['original_name'] == entry['original_name']):
+				found = previous
 
-				entry['street'] = street
-				entry['house_number'] = house_number
-				entry['house_letter'] = house_letter
-				entry['address'] = address
-				entry['original_address'] = get_address(original_street, "", inspection['postnr'], inspection['poststed'])
+		if found:
+			if found['date_last_inspection'] < date_inspection:
+				found['date_last_inspection'] = date_inspection
+			if found['date_first_inspection'] > date_inspection:
+				found['date_first_inspection'] = date_inspection
 
-				# Look up identical previous restaurants to avoid duplicates
+		elif " M/S" not in name and "M/S " not in name and "MS " not in name and "MF " not in name and "M/F " not in name:  # Avoid ships
+			restaurants.append(entry)
+			unique_restaurants += 1
 
-				found = None
-				for previous in restaurants:
-					if (previous['address'] == address) and (previous['original_name'] == entry['original_name']):
-						found = previous
+		total_restaurants += 1
 
-				if found:
-					if found['date_last_inspection'] < date_inspection:
-						found['date_last_inspection'] = date_inspection
-					if found['date_first_inspection'] > date_inspection:
-						found['date_first_inspection'] = date_inspection
+	file.close()
 
-				elif name.find(" M/S") < 0:
-					restaurants.append(entry)
-					unique_restaurants += 1
-
-			total_pages = inspection_data['pages']
-
-		total_restaurants += inspection_data['posts']
 
 	# Update dates for reporting
 
@@ -445,7 +430,9 @@ if __name__ == '__main__':
 
 	# Produce OSM file
 
-	count = 0
+	count_new = 0
+	count_old = 0
+	count_output = 0
 
 	if (unique_restaurants > 0) and (unique_restaurants < max_restaurants):
 
@@ -453,7 +440,7 @@ if __name__ == '__main__':
 
 		message ("Geocoding and generating output file...\n")
 
-		filename = "restaurants.osm"
+		filename = osm_filename.replace(".osm", "_new.osm")
 		file = open (filename, "w")
 		file.write ('<?xml version="1.0" encoding="UTF-8"?>\n')
 		file.write ('<osm version="0.6" generator="restaurant2osm v%s" upload="false">\n' % version)
@@ -470,39 +457,48 @@ if __name__ == '__main__':
 
 				latitude = 0.0
 				longitude = 0.0
+				result = False
 
-				result = geocode (restaurant['street'], restaurant['house_number'], restaurant['house_letter'], restaurant['city'])
+				if restaurant['ref'] in old_restaurants:
+					latitude = old_restaurants[ restaurant['ref'] ]['latitude']
+					longitude = old_restaurants[ restaurant['ref'] ]['longitude']
+					result = True
+					count_old += 1
 
-				if result:
-					latitude = result[0]
-					longitude = result[1]
-					count += 1
+				elif geocode_address:
+					result = geocode (restaurant['street'], restaurant['house_number'], restaurant['house_letter'], restaurant['city'])
 
-				else:
-					# Attempt new geocoding after fixing street name
+					if result:
+						latitude = result[0]
+						longitude = result[1]
+						count_new += 1
 
-					street = restaurant['street'] + " "
-					old_street = street
-					for word_from, word_to in transform_address.iteritems():
-						street = street.replace(word_from, word_to)
-						street = street.replace(word_from.upper(), word_to.upper())
+					else:
+						# Attempt new geocoding after fixing street name
 
-					if street != old_street:
-						result = geocode (street, restaurant['house_number'], restaurant['house_letter'], restaurant['city'])
-						if result:
-							latitude = result[0]
-							longitude = result[1]
-							count += 1
+						street = restaurant['street'] + " "
+						old_street = street
+						for word_from, word_to in iter(transform_address.items()):
+							street = street.replace(word_from, word_to)
+							street = street.replace(word_from.upper(), word_to.upper())
+
+						if street != old_street:
+							result = geocode (street, restaurant['house_number'], restaurant['house_letter'], restaurant['city'])
+							if result:
+								latitude = result[0]
+								longitude = result[1]
+								count_new += 1
 
 				node_id -= 1
+				count_output += 1
 
 				file.write ('  <node id="%i" lat="%f" lon="%f">\n' % (node_id, latitude, longitude))
 
 				# Decide amenity type
 
 				amenity = "restaurant"
-				for keyword, amenity_value in amenities.iteritems():
-					if restaurant['name'].lower().find(keyword.lower()) >= 0:
+				for keyword, amenity_value in iter(amenities.items()):
+					if keyword.lower() in restaurant['name'].lower():
 						amenity = amenity_value
 
 				# Produce tags
@@ -516,6 +512,8 @@ if __name__ == '__main__':
 				else:
 					make_osm_line("amenity", amenity)
 
+				make_osm_line("ref:mattilsynet", restaurant['ref'])
+#				make_osm_line("ref:orgnr", restaurant['orgnr'])
 				make_osm_line("name", restaurant['name'])
 				make_osm_line("ADDRESS", restaurant['original_address'])
 				make_osm_line("CREATED", restaurant['date_created'])
@@ -533,15 +531,26 @@ if __name__ == '__main__':
 				if restaurant['postcode'] in postcode_districts:
 					make_osm_line("MUNICIPALITY", postcode_districts[ restaurant['postcode'] ]['municipality_name'])
 					make_osm_line("COUNTY", county_names[ postcode_districts[ restaurant['postcode'] ]['municipality_ref'][0:2] ])
-				else:
+				elif restaurant['postcode']:
 					message ("Postcode not found: %s\n" % restaurant['postcode'])
+
+				# Output previous geocode results, if any
+
+				if restaurant['ref'] in old_restaurants:
+					if "geocode_method" in old_restaurants[ restaurant['ref'] ]:
+						make_osm_line("GEOMETHOD", old_restaurants[ restaurant['ref'] ]['geocode_method'])
+					if "geocode_result" in old_restaurants[ restaurant['ref'] ]:
+						make_osm_line("GEORESULT", old_restaurants[ restaurant['ref'] ]['geocode_result'])
+				elif geocode_address and result:
+					make_osm_line("GEOMETHOD", "Matrikkel/address -> Vegadresse")  # Same coding as geocode2osm.py
+					make_osm_line("GEORESULT", "house")
 
 				# Done with OSM store node
 
 				file.write ('  </node>\n')
 
-				if not(result):
-					message ("Address not geocoded: %s --> %s" % (restaurant['name'], restaurant['original_address']))
+				if geocode_address and not result:
+					message ("NOT FOUND: %s --> %s" % (restaurant['name'], restaurant['original_address']))
 					if restaurant['address'] != restaurant['original_address']:
 						message (" (%s)\n" % restaurant['address'])
 					else:
@@ -552,10 +561,10 @@ if __name__ == '__main__':
 		file.write ('</osm>\n')
 		file.close()
 
-		message ("\nSuccessfully geocoded %i of %i restaurants\n" % (count, unique_restaurants))
-		message ("Written %i restaurants to file '%s'\n" % (unique_restaurants, filename))
-		if count < unique_restaurants:
-			message ("You may geocode the remaining %i restaurants with 'github.com/osmno/geocode2osm'\n" % (unique_restaurants - count))
+		message ("\nSuccessfully geocoded %i restaurants + %i previously geocoded\n" % (count_new, count_old))
+		message ("Written %i restaurants to file '%s'\n" % (count_output, filename))
+		if count_new + count_old < count_output:
+			message ("You may geocode the remaining %i restaurants with 'github.com/osmno/geocode2osm'\n" % (count_output - count_new - count_old))
 		message ("\nLatest restaurant: %s\n" % latest_restaurant)
 		message ("Latest inspection: %s\n" % latest_inspection)
 		message ("First inspection:  %s\n\n" % first_inspection)
